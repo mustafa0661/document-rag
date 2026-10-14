@@ -1,0 +1,5 @@
+-r requirements.txt
+
+pytest==9.1.1
+# Testlerde metin katmanlı PDF fixture'ı üretmek için
+fpdf2
