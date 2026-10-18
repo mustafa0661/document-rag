@@ -87,7 +87,7 @@ class DoclingParser(DocumentParser):
         modelleri EasyOCR'ın model klasörüne iner. Çalışma anında da aynı
         önbellekler kullanılır, ek yapılandırma gerekmez.
 
-        Kurulum adımında (`python -m scripts.download_models`) ve ileride
+        Kurulum adımında (`python -m app.scripts.download_models`) ve ileride
         uygulama açılışında çağrılır; böylece ağ sorunları ilk belgede değil
         burada, anlaşılır biçimde ortaya çıkar.
         """

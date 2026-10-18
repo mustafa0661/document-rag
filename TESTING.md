@@ -1,19 +1,19 @@
 # Test ve Doğrulama
 
-Bu doküman sistemin nasıl test edildiğini, sonuçlarını ve bilinen sınırlarını kayıt altına alır. Şu an **Document Ingestion** bileşenini kapsıyor; retrieval ve soru-cevap aşamaları geliştirildikçe yeni bölümler eklenecek.
+Bu doküman sistemin nasıl test edildiğini, sonuçlarını ve bilinen sınırlarını kayıt altına alır. Şu an **Document Ingestion** ile **Chunking, Embedding ve Retrieval** bileşenlerini kapsıyor; soru-cevap (LLM) aşaması geliştirildikçe yeni bölümler eklenecek.
 
 ## Testleri çalıştırma
 
 ```bash
 pip install -r requirements-dev.txt
-python -m scripts.download_models   # Modelleri önceden indirir (ilk kurulumda bir kez)
+python -m app.scripts.download_models   # Modelleri önceden indirir (ilk kurulumda bir kez)
 
-pytest -m "not integration" -v      # Birim testleri: Docling yüklenmez, saniyeler içinde biter
-pytest -m integration -v            # Entegrasyon: gerçek Docling + EasyOCR
-pytest -v                           # Tümü
+pytest -m "not integration" -v          # Birim testleri: model yüklenmez
+pytest -m integration -v -s             # Entegrasyon: gerçek Docling, EasyOCR ve BGE-M3; -s ölçümleri gösterir
+pytest -v                               # Tümü
 ```
 
-Model indirme adımı atlanırsa modeller ilk entegrasyon testinde indirilir; bu durumda internet bağlantısı gerekir ve ilk çalıştırma birkaç dakika sürebilir. Docling kurulu olmayan bir ortamda entegrasyon modülü otomatik olarak atlanır ve birim testleri yine çalışır.
+Model indirme adımı atlanırsa modeller ilk entegrasyon testinde indirilir; bu durumda internet bağlantısı gerekir ve ilk çalıştırma birkaç dakika sürebilir. Docling veya sentence-transformers kurulu olmayan bir ortamda ilgili entegrasyon modülü otomatik olarak atlanır ve birim testleri yine çalışır.
 
 ## Test ortamı
 
@@ -24,6 +24,8 @@ Model indirme adımı atlanırsa modeller ilk entegrasyon testinde indirilir; bu
 | pytest | 9.1.1 |
 | Docling | 2.138.0 (`docling[feat-ocr-easyocr]`) |
 | OCR | EasyOCR, diller: `tr`, `en` |
+| Embedding | BAAI/bge-m3 (`sentence-transformers` 6.1.0), 1024 boyut |
+| Vektör veritabanı | ChromaDB 1.5.9, kosinüs mesafesi |
 | Donanım hızlandırma | Yok — torch CPU üzerinde çalışıyor (bkz. Sınırlamalar) |
 
 ## Test stratejisi
@@ -39,15 +41,24 @@ OCR çıktısı birebir deterministik olmadığı için metin testleri tam eşle
 
 ## Sonuçlar
 
+Son çalıştırma (Windows), iki aşama birlikte:
+
 | Katman | Sonuç | Süre |
 |---|---|---|
-| Birim testleri | 12 / 12 geçti | < 1 sn |
-| Entegrasyon testleri | 9 / 9 geçti | 37,6 sn |
-| **Tümü** | **21 / 21 geçti** | **41,2 sn** |
+| Birim testleri | 53 / 53 geçti | 12,3 sn |
+| Entegrasyon testleri | 20 / 20 geçti | 64,7 sn |
+| **Tümü** | **73 / 73 geçti** | |
 
-Entegrasyon testleri üç kez çalıştırıldı; üçünde de tamamı geçti.
+| Aşama | Birim | Entegrasyon |
+|---|---|---|
+| Ingestion | 12 | 9 |
+| Chunking, embedding, retrieval | 41 (16 chunker + 25 indeks/retrieval) | 11 (BGE-M3) |
 
-### Birim testleri
+Ingestion entegrasyon testleri ayrıca üç kez art arda çalıştırıldı; üçünde de tamamı geçti.
+
+### Ingestion
+
+#### Birim testleri
 
 | Test | Doğrulanan davranış |
 |---|---|
@@ -64,7 +75,7 @@ Entegrasyon testleri üç kez çalıştırıldı; üçünde de tamamı geçti.
 | `test_document_without_text_is_returned_with_warning` | Metinsiz belge hata değil; boş sayfalar korunuyor ve uyarı loglanıyor |
 | `test_accepts_str_path` | `str` yol da kabul ediliyor |
 
-### Entegrasyon testleri
+#### Entegrasyon testleri
 
 | Test | Girdi | Doğrulanan davranış |
 |---|---|---|
@@ -78,7 +89,80 @@ Entegrasyon testleri üç kez çalıştırıldı; üçünde de tamamı geçti.
 | `test_corrupted_pdf_raises_parse_error` | `%PDF` başlıklı rastgele baytlar | Anlaşılır `DocumentParseError` |
 | `test_service_end_to_end_with_docling` | Metin katmanlı PDF | Servis + Docling birlikte: metadata ve sayfa numaraları doğru |
 
-## Belge tiplerine göre davranış
+## Chunking, Embedding ve Retrieval
+
+### Test stratejisi
+- **Birim testleri** gerçek model yerine sahte bir embedding provider kullanıyor. Bu provider kelimeleri hash'leyerek normalize edilmiş vektörler üretiyor; deterministik ve kelime örtüşmesine duyarlı. Bu sayede "doğru chunk bulundu mu" mantığı modelden bağımsız olarak sınanabiliyor. Vektör veritabanı ise her test için geçici bir klasörde açılan **gerçek** bir ChromaDB.
+- **Entegrasyon testleri** gerçek BGE-M3 ile çalışıyor. Sorgular chunk'lardaki kelimeleri bilinçli olarak tekrar etmiyor ("şeker" ↔ "glukoz"); bu sayede kelime eşleşmesi değil, anlamsal arama ölçülüyor.
+- **Testlerin gerçekten bir şey ölçtüğü doğrulandı (mutasyon testi).** Beş kritik koruma tek tek bozuldu: yapılandırma kontrolü, belge filtresi, yarım indekslemenin geri alınması, tekrar indekslemenin atlanması ve embedding boyut kontrolü. Her birinde en az bir test başarısız oldu.
+
+### İstenen senaryoların karşılığı
+
+| # | Senaryo | Test(ler) | Katman |
+|---|---|---|---|
+| 1 | Türkçe metinde doğru chunk | `test_turkish_query_finds_correct_chunk_with_source_and_page`, `test_semantic_query_finds_correct_page` (TR) | Birim + Entegrasyon |
+| 2 | İngilizce metinde doğru chunk | `test_english_query_finds_correct_chunk`, `test_semantic_query_finds_correct_page` (EN) | Birim + Entegrasyon |
+| 3 | Türkçe soru → İngilizce içerik | `test_turkish_query_finds_english_content` | Entegrasyon |
+| 4 | Sayfa numarası korunuyor | `test_chunks_never_cross_pages_and_keep_page_numbers`, retrieval testlerindeki sayfa kontrolleri | Birim + Entegrasyon |
+| 5 | Belgeler arası veri karışmıyor | `test_search_never_returns_chunks_from_other_documents`, `test_document_ids_are_required`, `test_delete_document_removes_only_its_chunks` | Birim |
+| 6 | Aynı dosyanın tekrar indekslenmesi | `test_reindexing_same_document_is_skipped_without_duplicates`, `test_forced_reindex_replaces_chunks` | Birim |
+| 7 | Boş içerik ve boş sorgu | `test_empty_document_indexes_nothing`, `test_empty_query_is_rejected` (3 varyant), `test_empty_pages_are_skipped` | Birim |
+| 8 | Overlap doğruluğu | `test_overlap_repeats_tail_of_previous_chunk_from_a_sentence_start`, `test_overlap_falls_back_to_words_when_last_sentence_is_too_long`, `test_no_overlap_when_disabled` | Birim |
+| 9 | Markdown tablo yapısı | `test_short_table_stays_intact_in_one_chunk`, `test_long_table_is_split_and_every_part_repeats_the_header`, `test_no_overlap_is_injected_into_tables`, `test_markdown_table_survives_storage_roundtrip` | Birim |
+| 10 | Kalıcı veritabanının yeniden açılması | `test_persistent_index_is_usable_after_reopening` | Birim |
+| 11 | Yanlış boyut veya model yapılandırması | `test_opening_index_with_different_config_is_rejected` (5 varyant), `test_wrong_embedding_dimension_is_rejected_and_nothing_is_stored`, `test_embedding_dimension_and_normalization` | Birim + Entegrasyon |
+| 12 | Alakasız sorgular | `test_irrelevant_queries_are_farther_than_relevant_ones` | Entegrasyon |
+
+Bunlara ek olarak şu testler var:
+- **Chunker:** 500 token sınırının hiçbir içerik türünde aşılmaması (gerçek tokenizer'la da doğrulandı), uzun cümlenin kelimelerden bölünmesi, başlığın sonraki chunk'lara ve sayfaya taşınması, sayfa sonundaki başlığın kaybolmaması, aynı girdiden her seferinde aynı çıktının üretilmesi.
+- **İndeksleme:** Yarıda kalan indekslemenin geri alınması, açık bir sıfırlama komutundan sonra indeksin yeniden oluşturulabilmesi.
+
+### Ölçümler (CPU, Windows)
+
+| Ölçüm | Değer |
+|---|---|
+| BGE-M3 ilk indirme | 178 sn (~2,3 GB) |
+| BGE-M3 yükleme (önbellekten) | 6,1 sn |
+| Embedding hızı | **1,23 chunk/sn** (16 chunk, chunk başına ~360 token, 13,0 sn) |
+| Türkçe token yoğunluğu | 2,33 token/kelime (12 kelime = 28 token) |
+
+**Yorum:** Türkçede kelime başına 2,33 token düşmesi, chunk boyutunun modelin kendi tokenizer'ıyla ölçülmesi kararını doğruluyor. Kelime sayısıyla ölçülseydi "500 kelimelik" bir chunk yaklaşık 1165 token olurdu ve modelin 512 tokenlık sınırında sessizce kırpılırdı. CPU'daki embedding hızı ise asıl darboğaz: 100 sayfalık bir belge (~300 chunk) yalnızca embedding için 4 dakikanın üzerinde sürer. GPU (RTX 3060) değerlendirmesi için ölçülmüş bir gerekçe bu.
+
+### Mesafe ölçümleri
+
+ChromaDB'nin döndürdüğü değer kosinüs **mesafesi**: `1 − kosinüs benzerliği`. Aralığı [0, 2] ve **küçük olan daha alakalı**. Embedding'ler normalize edildiği için `benzerlik = 1 − mesafe` birebir kosinüs benzerliği. Tabloda en yakın sonucun mesafesi veriliyor.
+
+| Tür | Soru | Belge | Bulunan sayfa | Mesafe |
+|---|---|---|---|---|
+| Alakalı (TR) | Şeker değeri kaç çıktı? | Türkçe | 1 ✅ | 0,4795 |
+| Alakalı (TR) | Doktora tekrar ne zaman gideceğim? | Türkçe | 2 ✅ | 0,3898 |
+| Alakalı (TR) | İlacı nasıl kullanmalıyım? | Türkçe | 3 ✅ | 0,3885 |
+| Alakalı (EN) | How much do I have to pay in total? | İngilizce | 1 ✅ | 0,3258 |
+| Alakalı (EN) | How long does shipping take? | İngilizce | 3 ✅ | 0,3130 |
+| Diller arası | Ödemenin son günü ne zaman? | İngilizce | 2 ✅ | 0,2942 |
+| Diller arası | Ürünün garanti süresi ne kadar? | İngilizce | 4 ✅ | 0,3281 |
+| Alakasız | Dünya Kupası finalini hangi takım kazandı? | Türkçe | — | 0,7647 |
+| Alakasız | What is the capital of Australia? | İngilizce | — | 0,6725 |
+
+**Özet:** Alakalı soruların en iyi sonuçları 0,2942 ile 0,4795 arasında (ortalama 0,3598); alakasız sorularınkiler 0,6725 ile 0,7647 arasında. Arada yaklaşık 0,19'luk bir boşluk var.
+
+**Gözlemler:**
+- Yedi alakalı sorunun yedisinde de doğru sayfa ilk sırada geldi.
+- Diller arası arama, aynı dildeki aramadan daha kötü değil; en düşük mesafe Türkçe soru ile İngilizce içerik arasında ölçüldü.
+- En zor durum eş anlamlı kelime içeren soru oldu ("şeker" ↔ "glukoz", 0,4795).
+
+**Neden henüz eşik yok:** Örnek küçük (7 alakalı, 2 alakasız soru) ve metinler kısa, tek cümlelik sayfalar. Bu sonuçlar eşiğin 0,55–0,60 aralığında aranabileceğine işaret ediyor. Ancak eşik, gerçek ve uzun belgelerle yapılacak ölçümden sonra belirlenecek (`python -m app.scripts.search_documents`). Uzun chunk'larda mesafelerin genel olarak artması beklenir.
+
+### Bilinen sınırlamalar
+- **Cümle ayırıcı basit bir kurala dayanıyor.** "Dr." gibi kısaltmalarda yanlış bölebiliyor. Sonucu en fazla birkaç kelimelik bir chunk sınırı kayması; içerik kaybı yok.
+- **Sayfa sınırını aşan paragraflar iki chunk'a bölünüyor**, çünkü chunk'lar sayfa sınırını aşmıyor. Ingestion'daki bilinen sınırlama nedeniyle (Docling'in sayfa sonu birleştirmesi) devam eden kısım çoğu zaman zaten önceki sayfada yer alıyor.
+- **Embedding CPU'da yavaş** (1,23 chunk/sn). Bkz. Ölçümler.
+
+### Test çıktısındaki zararsız mesajlar
+- `Token indices sequence length is longer than the specified maximum sequence length (… > 512)`: Chunker, uzun bir paragrafı bölmeden önce token sayısını ölçmek için tokenizer'a veriyor; tokenizer da metnin modelin sınırından uzun olduğunu hatırlatıyor. Bu metin modele hiçbir zaman gönderilmiyor; model en fazla 500 tokenlık chunk'lar görüyor (`test_real_tokenizer_keeps_chunks_within_limit`).
+- Hugging Face'in `HF_TOKEN` ve Windows symlink uyarıları: Kimlik doğrulaması olmadan indirme yapıldığını ve Windows'ta önbelleğin kopya dosyalarla çalıştığını bildiriyor. İşlevsel bir etkileri yok (bkz. README → Sorun giderme).
+
+## Ingestion: Belge tiplerine göre davranış
 
 | Belge tipi | Durum | Not |
 |---|---|---|
@@ -92,7 +176,7 @@ Entegrasyon testleri üç kez çalıştırıldı; üçünde de tamamı geçti.
 
 Önemli not: Şu ana kadarki testler **sentetik, temiz** belgelerle yapıldı (beyaz zemin, net font, kenarlıklı tablo). Gerçek dünya taramalarındaki performans henüz ölçülmedi.
 
-## Bilinen sınırlamalar ve başarısız olunan durumlar
+## Ingestion: Bilinen sınırlamalar ve başarısız olunan durumlar
 
 ### 1. Sayfa sınırını aşan paragrafların sayfa ataması
 Docling, bir sayfanın sonunda bitmemiş görünen paragrafı bir sonraki sayfanın başıyla tek öğede birleştiriyor. Sayfa bazlı dışa aktarma yalnızca öğenin ilk sayfasına baktığı için, devam eden kısım **bir önceki sayfaya** yazılıyor. Metin kaybolmuyor, ancak RAG'de kaynak gösterilirken bu kısım için sayfa numarası bir eksik görünebilir.
@@ -110,10 +194,10 @@ Mesaj, pytest'in `faulthandler` eklentisinden geliyor. Windows'ta `faulthandler`
 Hata üçüncü parti yerel kodda olduğu ve çıktıyı etkilemediği için proje tarafında bir değişiklik yapılmadı. Mesaj bilinçli olarak gizlenmedi (`-p no:faulthandler` kullanılmadı); böylece ileride gerçek bir çökme olursa teşhis bilgisi kaybolmaz. Bir çalıştırmada süreç çökerse veya tablo çıktısı yanlış çıkarsa yeniden ele alınacak.
 
 ### 4. CPU üzerinde çalışma
-Torch CPU sürümüyle kurulu. 9 entegrasyon testi yaklaşık 37,6 saniye sürüyor. Çok sayfalı belgelerde işleme süresi belirgin şekilde artacak.
+Torch CPU sürümüyle kurulu. Ingestion'ın 9 entegrasyon testi yaklaşık 37,6 saniye sürüyor; embedding hızı 1,23 chunk/sn (bkz. Ölçümler). Çok sayfalı belgelerde işleme süresi belirgin şekilde artacak.
 
 ### 5. İlk kurulumda model indirme
-Docling ve EasyOCR modelleri ilk kullanımda internetten indiriliyor. Bu nedenle kurulumda `python -m scripts.download_models` adımı ayrıca çalıştırılıyor; ağ sorunu varsa testte değil burada, anlaşılır bir mesajla ortaya çıkıyor. Geliştirme ortamında bir kez indirme hatası yaşandı, ancak yeniden üretilemedi (bkz. `DEVLOG.md`).
+Docling ve EasyOCR modelleri ilk kullanımda internetten indiriliyor. Bu nedenle kurulumda `python -m app.scripts.download_models` adımı ayrıca çalıştırılıyor; ağ sorunu varsa testte değil burada, anlaşılır bir mesajla ortaya çıkıyor. Geliştirme ortamında bir kez indirme hatası yaşandı, ancak yeniden üretilemedi (bkz. `DEVLOG.md`).
 
 ## Test çıktısındaki uyarılar
 
@@ -131,5 +215,7 @@ Uyarıların tamamı kapatılmadı: projeye ait ya da yeni bir uyarı görünmey
 ## Henüz kapsanmayanlar
 
 - Gerçek taranmış belgelerle (düşük çözünürlük, eğik sayfa, gürültü, el yazısı) doğrulama
+- Gerçek ve uzun belgelerde retrieval mesafe ölçümü ve buna dayalı benzerlik eşiği
+- GPU (RTX 3060) ile embedding hızı ölçümü
 - README'deki kurulum adımlarının boş bir ortamda baştan sona denenmesi
-- Retrieval, soru-cevap ve "belgede olmayan bilgi" senaryoları (ilgili bileşenler geliştirilince eklenecek)
+- Soru-cevap (LLM) ve "belgede olmayan bilgi" senaryoları (ilgili bileşen geliştirilince eklenecek)

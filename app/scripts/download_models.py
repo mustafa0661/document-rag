@@ -1,40 +1,60 @@
-"""Docling ve EasyOCR modellerini önceden indirir.
+"""Docling, EasyOCR ve BGE-M3 modellerini önceden indirir.
 
 Kullanım (proje kökünden):
-    python -m scripts.download_models
+    python -m app.scripts.download_models
 
-Modeller normalde ilk belge işlenirken indirilir. Bu adımı kurulumda ayrıca
+Modeller normalde ilk kullanımda indirilir. Bu adımı kurulumda ayrıca
 çalıştırmak, ağ sorunlarının test veya ilk kullanım sırasında değil burada,
-anlaşılır bir mesajla görünmesini sağlar. Modeller zaten indirilmişse
-yeniden indirilmez; betik yalnızca yükleyip doğrular.
+anlaşılır bir mesajla görünmesini sağlar. Zaten indirilmiş modeller yeniden
+indirilmez; betik yalnızca yükleyip doğrular.
 """
 
 import logging
 import sys
 import time
 
-from app.infrastructure.docling_parser import DEFAULT_OCR_LANGUAGES, DoclingParser
+
+def _step(title: str, action) -> bool:
+    print(f"\n{title}")
+    started = time.perf_counter()
+    try:
+        action()
+    except Exception:
+        logging.exception("Başarısız: %s", title)
+        return False
+    print(f"  hazır ({time.perf_counter() - started:.1f} sn)")
+    return True
+
+
+def _docling() -> None:
+    from app.infrastructure.docling_parser import DoclingParser
+
+    DoclingParser().warm_up()
+
+
+def _embedding() -> None:
+    from app.core.config import RagSettings
+    from app.infrastructure.bge_embedding import BgeM3EmbeddingProvider
+
+    settings = RagSettings.from_env()
+    BgeM3EmbeddingProvider(settings.embedding_model, settings.embedding_dimension)
 
 
 def main() -> int:
     logging.basicConfig(level=logging.WARNING, format="%(levelname)s: %(message)s")
-    languages = ", ".join(DEFAULT_OCR_LANGUAGES)
-    print(f"Docling layout/tablo modelleri ve EasyOCR ({languages}) modelleri hazırlanıyor...")
-    print("İlk çalıştırmada indirme birkaç dakika sürebilir.")
-
-    started = time.perf_counter()
-    try:
-        DoclingParser().warm_up()
-    except Exception:
-        logging.exception("Modeller indirilemedi veya yüklenemedi.")
+    print("Modeller hazırlanıyor. İlk çalıştırmada indirme birkaç dakika sürebilir.")
+    results = [
+        _step("1/2 Docling layout/tablo modelleri ve EasyOCR (tr, en)", _docling),
+        _step("2/2 BAAI/bge-m3 embedding modeli (~2.3 GB)", _embedding),
+    ]
+    if not all(results):
         print(
-            "\nREADME.md içindeki 'Sorun giderme' bölümüne bakın. "
-            "Yardım isterken yukarıdaki hata çıktısının tamamını paylaşın.",
+            "\nBazı modeller hazırlanamadı. README.md içindeki 'Sorun giderme' bölümüne bakın; "
+            "yardım isterken yukarıdaki hata çıktısının tamamını paylaşın.",
             file=sys.stderr,
         )
         return 1
-
-    print(f"Modeller hazır ({time.perf_counter() - started:.1f} sn).")
+    print("\nTüm modeller hazır.")
     return 0
 
 

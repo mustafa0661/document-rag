@@ -19,3 +19,15 @@ class EmptyFileError(IngestionError):
 
 class DocumentParseError(IngestionError):
     """Dosya okunamadı veya dönüştürülemedi (bozuk dosya, uyumsuz içerik vb.)."""
+
+
+class IndexConfigMismatchError(Exception):
+    """Mevcut vektör indeksi farklı bir model veya chunk ayarıyla oluşturulmuş."""
+
+
+class EmbeddingDimensionError(Exception):
+    """Embedding boyutu veya sayısı beklenenle uyuşmuyor."""
+
+
+class InvalidQueryError(ValueError):
+    """Arama isteği geçersiz: boş sorgu, boş belge listesi veya geçersiz top_k."""

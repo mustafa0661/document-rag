@@ -29,7 +29,7 @@ class IngestionService:
         path = Path(file_path)
         self._validate(path)
 
-        document_id = self._compute_document_id(path)
+        document_id = self.compute_document_id(path)
         parsed_pages = self._parser.parse(path)
 
         pages = tuple(
@@ -69,8 +69,13 @@ class IngestionService:
             raise EmptyFileError(f"'{path.name}' boş (0 bayt).")
 
     @staticmethod
-    def _compute_document_id(path: Path) -> str:
-        """İçeriğin SHA-256 özeti: aynı dosya her zaman aynı kimliği alır."""
+    def compute_document_id(path: str | Path) -> str:
+        """İçeriğin SHA-256 özeti: aynı dosya her zaman aynı kimliği alır.
+
+        Belgeyi okumadan (parse etmeden) kimliğini bilmek için de kullanılır;
+        örneğin zaten indeksli bir belgenin pahalı OCR adımını atlamak için.
+        """
+        path = Path(path)
         digest = hashlib.sha256()
         with path.open("rb") as file:
             while chunk := file.read(_HASH_CHUNK_SIZE):

@@ -12,5 +12,9 @@ typing-inspection==0.4.4
 typing_extensions==4.16.0
 
 # Document ingestion: Docling + EasyOCR (Türkçe/İngilizce OCR)
-docling==2.138.0
-easyocr
+# Not: `docling` meta paketinin ekstrası `easyocr`dir (`feat-ocr-easyocr` docling-slim'e ait).
+docling[easyocr]==2.138.0
+
+# Chunking, embedding ve retrieval
+chromadb==1.5.9
+sentence-transformers==6.1.0

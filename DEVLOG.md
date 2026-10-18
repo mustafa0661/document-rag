@@ -134,7 +134,7 @@ Docling API'si dokümantasyon özetlerine veya ezbere değil, kurulu sürümün 
 #### Hugging Face'ten model indirilemedi
 Docling'in layout modelleri ilk çalıştırmada Hugging Face'ten indiriliyor ve indirme başarısız oldu. Terminal oturumu için `HF_HUB_ENABLE_HF_TRANSFER=0`, `REQUESTS_CA_BUNDLE=""` ve `CURL_CA_BUNDLE=""` tanımlanarak geçici olarak aşıldı. `CURL_CA_BUNDLE=""` bazı ortamlarda SSL doğrulamasını devre dışı bıraktığı için bu kalıcı bir çözüm olarak kabul edilmedi. Kök neden ayrıca incelendi (bkz. aşağıdaki not).
 
-> **Kök neden ve kalıcı çözüm:** Sorun yeniden üretilemedi. Yeni bir terminalde ağ ve SSL ile ilgili ortam değişkenleri kontrol edildi (tanımlı değişken yok) ve model, Docling'in kendi aracıyla (`docling-tools models download layout`) hiçbir geçici ayar olmadan başarıyla indirildi. İlk hata büyük olasılıkla geçici bir ağ veya servis sorunuydu; ancak ilk hata mesajı kaydedilmediği için kesin neden belirlenemedi. Geçici değişkenlerin sorunu çözdüğü kanıtlanamadığı için kurulum talimatlarına eklenmedi. Bunun yerine model indirme, testlerden önce çalıştırılan ayrı ve açık bir kurulum adımı yapıldı (`python -m scripts.download_models`, bkz. Karar 10); böylece bir ağ sorunu test sırasında değil, kurulumda ve anlaşılır bir mesajla görünür. **Ders:** Hata çıktısını, çözümü denemeden önce kaydetmek.
+> **Kök neden ve kalıcı çözüm:** Sorun yeniden üretilemedi. Yeni bir terminalde ağ ve SSL ile ilgili ortam değişkenleri kontrol edildi (tanımlı değişken yok) ve model, Docling'in kendi aracıyla (`docling-tools models download layout`) hiçbir geçici ayar olmadan başarıyla indirildi. İlk hata büyük olasılıkla geçici bir ağ veya servis sorunuydu; ancak ilk hata mesajı kaydedilmediği için kesin neden belirlenemedi. Geçici değişkenlerin sorunu çözdüğü kanıtlanamadığı için kurulum talimatlarına eklenmedi. Bunun yerine model indirme, testlerden önce çalıştırılan ayrı ve açık bir kurulum adımı yapıldı (`python -m scripts.download_models`; Day 3'te `app/scripts` altına taşındı, bkz. Karar 10); böylece bir ağ sorunu test sırasında değil, kurulumda ve anlaşılır bir mesajla görünür. **Ders:** Hata çıktısını, çözümü denemeden önce kaydetmek.
 
 #### Taranmış PDF'in 2. sayfası boş geliyordu
 Bu, günün en öğretici sorunu oldu. Çözüme giden yol düz bir çizgi değildi, bu yüzden adım adım kaydediyorum.
@@ -194,3 +194,75 @@ _Doldurulacak._ (Planlama, kodlama, Docling kaynak kodu incelemesi, teşhis sür
 ### Baştan başlasaydım
 - Test fixture'larını en baştan gerçekçi cümlelerle yazardım.
 - İlk başarısız testte, değişiklik denemeden önce doğrudan teşhis betiğiyle başlardım.
+
+---
+
+## Day 3 — 2026-10-15
+
+### Hedef
+RAG'in ikinci aşaması: `IngestedDocument` çıktısını chunk'lara bölmek, BAAI/bge-m3 ile embedding üretmek, ChromaDB'de kalıcı olarak saklamak ve soruya en alakalı chunk'ları getirmek. LLM, prompt ve arayüz bu aşamanın kapsamı dışında.
+
+### Kronolojik akış
+
+**1. Önce plan, sonra kod.** Mimari, veri modelleri, arayüzler, chunking stratejisi ve indeks yaşam döngüsü kod yazılmadan önce planlandı ve onaylandı. Plan aşamasında harici kütüphanelerin gerçek davranışı denenerek doğrulandı; aşağıdaki kararların birkaçı doğrudan bu denemelerden çıktı.
+
+**2. Bulgu: `requirements.txt` Görev 1'den beri hatalıydı.** Bağımlılık çözümlemesi denenirken pip `docling 2.138.0 does not provide the extra 'feat-ocr-easyocr'` uyarısı verdi. Docling'in kaynak deposu birden fazla paket içeriyor; Görev 1'de `docling-slim` paketinin ekstra adı okunmuştu. `docling` meta paketinde bu ekstranın adı `easyocr`. Pip bilinmeyen ekstraları sessizce yok saydığı ve `standard` kurulumu RapidOCR'ı içerdiği için, temiz bir kurulumda **EasyOCR hiç kurulmayacaktı.** Geliştirme ortamında testler geçiyordu, çünkü EasyOCR daha önceki bir denemede elle kurulmuştu. `docling[easyocr]` olarak düzeltildi. Ders: "boş ortamda kurulum denemesi" açık maddesinin neden gerekli olduğunu gösteren somut bir örnek.
+
+**3. ChromaDB davranışı denenerek doğrulandı (1.5.9).**
+- `configuration={"hnsw": {"space": "cosine"}}` gerçekten kosinüs mesafesi veriyor: `[1,1,0]` ile `[1,0,0]` arasında 0,2929 = 1 − cos 45°.
+- **Kritik:** Mevcut bir koleksiyon farklı metadata ile `get_or_create_collection` çağrısıyla açıldığında ChromaDB eski metadata'yı **sessizce koruyor**. Boyut uyuşmazlığını kendisi yakalıyor, ama model adını hiç kontrol etmiyor. Bu bulgu, indeks yapılandırmasının açıkça doğrulanması kararını doğurdu (Karar 15).
+- Koleksiyon adı en az 3 karakter olmalı; `embedding_function=None` kabul ediliyor.
+
+**4. `sentence-transformers` 6.1.0 API'si kaynak koddan doğrulandı.** Yeni bir ana sürüm: boyut metodu `get_embedding_dimension()` (eski adı yalnızca yeni ada yönlendiriyor). `max_seq_length` ayarlanabiliyor, `tokenizer` erişilebilir. Bağımlılık aralıkları Docling ile uyumlu (ikisi de `transformers` 5.x kabul ediyor).
+
+**5. Başarısız deneme: bağımlılık çözümlemesi geliştirme ortamında tamamlanamadı.** `docling + chromadb + sentence-transformers` için `pip install --dry-run` denemesi CUDA'lı torch paketlerini indirmeye çalıştığı için diski doldurdu. Uyumluluk kontrolü kullanıcı ortamında `pip install` ve `pip check` ile yapılacak.
+
+**6. Başarısız deneme: chunker'da overlap sessizce düşüyordu.** İlk sürümde sınırı aşan paragraflar tam bütçe boyutunda parçalara bölünüyordu. Yeni chunk'a geçerken "overlap + parça" toplamı hiçbir zaman sınıra sığmadığı için overlap uygulanmıyordu. Elle yapılan ilk denemede parçalar küçük olduğu için sorun görünmemişti; overlap testleri yakaladı. Çözüm: metin parçaları `bütçe − overlap` boyutunda bölünüyor. Aynı turda testlerden birinin beklentisinin de fazla dar olduğu (yalnızca son cümleyi arıyordu, oysa overlap sınıra sığdığı sürece birden fazla cümle taşıyabilir) görüldü ve test düzeltildi.
+
+**7. Testlerin gerçekten bir şey ölçtüğü doğrulandı (mutasyon testi).** İndeks testlerinin 25'i de ilk çalıştırmada geçince, beş kritik koruma tek tek bozuldu: yapılandırma kontrolü, belge filtresi, yarım indekslemenin geri alınması, tekrar indekslemenin atlanması ve embedding boyut kontrolü. Her birinde en az bir test başarısız oldu; korumalar geri yüklendiğinde 25 testin tamamı tekrar geçti.
+
+### Kritik karar noktaları
+
+#### 13. Chunking: Kendi Markdown chunker'ımız
+- **Değerlendirilen alternatifler:** Docling `HybridChunker`, LangChain splitter'ları, kendi chunker'ımız.
+- **Neden `HybridChunker` değil:** Tokenizer'ı biliyor ve tabloları tanıyor, ama `IngestedDocument` yerine `DoclingDocument` nesnesine ihtiyaç duyuyor. Bu, chunker'ı Docling'e bağlar ve parser arayüzünü delmiş olur. Ayrıca sayfa ataması, bilinen `prov[0]` sınırlamasıyla aynı mekanizmaya dayanıyor.
+- **Neden LangChain değil:** Yaklaşık 150 satırlık bir iş için ağır bir bağımlılık getiriyor; tablo bölme mantığını yine bizim yazmamız gerekiyor.
+- **Kurallar:** Chunk'lar sayfa sınırını aşmıyor. 500 token **kesin** üst sınır ve başlık öneki ile overlap da bu sınırın içinde. Token sayısı BGE-M3'ün kendi tokenizer'ıyla ölçülüyor; Türkçe eklemeli bir dil olduğundan kelime sayısı gerçek token sayısını olduğundan az gösterir. Aktif başlık, bölümün sonraki chunk'larına ve bir sonraki sayfaya önek olarak taşınıyor. Overlap (75 token) cümle sınırından başlıyor; yeni bölüme ve tablolara uygulanmıyor.
+- **Sınırı aşan içerik:** Paragraflar cümlelerden, cümleler kelimelerden, boşluksuz dizgiler karakterlerden bölünüyor. Tablolar satır gruplarına bölünüyor ve **her parçaya başlık satırı tekrar ekleniyor**; böylece "98" değerinin "Glukoz / Sonuç" sütununa ait olduğu bilgisi kaybolmuyor.
+- **Bilinen zayıflık:** Cümle ayırıcı basit bir kurala dayanıyor; "Dr." gibi kısaltmalarda yanlış bölebiliyor. Sonucu en fazla birkaç kelimelik bir sınır kayması; içerik kaybı yok.
+
+#### 14. Embedding: `sentence-transformers` ile BGE-M3
+- **FlagEmbedding yerine:** Şu an yalnızca dense vektöre ihtiyaç var. `sentence-transformers` daha yaygın, daha basit ve zaten kurulu olan torch'u kullanıyor. Sparse/hibrit arama ileride değerlendirilebilir.
+- **Ayarlar:** Model bir kez yükleniyor; vektörler normalize ediliyor. Sorgu instruction'ı yok, çünkü BGE-M3 gerektirmiyor. `max_seq_length=512`; modelin 8192 tokenlık sınırı CPU'da gereksiz bellek ve süre harcatırdı.
+- **Arayüz kararı:** `embed_documents` ve `embed_query` ayrı metotlar, çünkü E5 gibi modeller sorgu ve belge için farklı önekler istiyor. `count_tokens` arayüzün parçası, çünkü chunk boyutu modelin kendi tokenlarıyla tanımlanıyor.
+- **Boyut doğrulaması:** Model yüklenirken modelin bildirdiği boyut kontrol ediliyor. Ayrıca her çağrının çıktısı servis katmanında yeniden kontrol ediliyor; provider'a güvenilmiyor.
+
+#### 15. İndeks yaşam döngüsü: Açık yapılandırma doğrulaması
+- `IndexConfig` (model, boyut, chunk boyutu, overlap, chunker sürümü) koleksiyonun metadata'sına yazılıyor ve her açılışta **açıkça** karşılaştırılıyor. Fark varsa, farklı alanları listeleyen bir `IndexConfigMismatchError` fırlatılıyor.
+- **Reddedilen alternatif 1:** Her yapılandırma için otomatik olarak yeni bir koleksiyon açmak. Kullanıcının belgeleri sessizce "kaybolmuş" gibi görünür.
+- **Reddedilen alternatif 2:** Eski koleksiyonu otomatik silmek. Kullanıcının onayı olmadan veri kaybına yol açar. Silme yalnızca açık bir komutla yapılıyor (`--reset-index`).
+- **Tekrar indeksleme:** Belge zaten indeksliyse atlanıyor. Bu güvenli, çünkü `document_id` içeriğin özeti ve yapılandırma doğrulaması aynı chunk'ların üretileceğini garanti ediyor. `reindex=True` ile eski chunk'lar silinip yeniden oluşturuluyor.
+- **Yarım kalan indeksleme:** Hata durumunda o belgenin o ana kadar yazılmış chunk'ları siliniyor; aksi halde belge "indeksli" görünüp sonraki denemede atlanırdı.
+- **`chunk_id`:** `{document_id}:p{sayfa}:c{sıra}`. Deterministik ve benzersiz.
+
+#### 16. Retrieval: Zorunlu belge filtresi, eşik yok
+- `document_ids` zorunlu bir parametre; "tüm belgelerde ara" diye bir varsayılan bilinçli olarak yok.
+- Kosinüs **mesafesi** = 1 − kosinüs benzerliği, aralığı [0, 2] ve küçük olan daha alakalı. Embedding'ler normalize edildiği için `similarity = 1 − distance` birebir kosinüs benzerliği. Sonuçlarda iki değer de veriliyor.
+- Benzerlik eşiği yok: önce alakalı ve alakasız soruların mesafe dağılımı ölçülecek (entegrasyon testi ve `search_documents` betiği).
+
+#### 17. Plandan küçük sapmalar
+- `contains_document` yerine `count_document_chunks` kullanıldı: aynı işi görüyor ve indeksleme sonucunda chunk sayısını raporlamayı da sağlıyor.
+- `TextChunker`'a `version` özelliği eklendi: chunk'lama mantığı değişirse eski indeksin yeniden kullanılmasını engelliyor.
+- Model indirme betiği BGE-M3'ü de kapsayacak şekilde genişletildi.
+
+### Sonuçlar
+- **73 / 73 test geçti (Windows):** 53 birim testi 12,3 sn'de, 20 entegrasyon testi 64,7 sn'de. Bunlar ingestion'ın mevcut 21 testi, 16 chunker testi, 25 indeks/retrieval testi ve 11 BGE-M3 testi. Mevcut 21 test bozulmadı.
+- **Retrieval kalitesi:** 7 alakalı sorunun 7'sinde de doğru sayfa ilk sırada geldi; bunların ikisi Türkçe soru ile İngilizce içerik arasındaydı. Alakalı soruların en iyi mesafeleri 0,29–0,48, alakasız sorularınkiler 0,67–0,76 aralığında; arada yaklaşık 0,19'luk bir boşluk var. Örnek küçük ve metinler kısa olduğu için eşik henüz belirlenmedi.
+- **Türkçede kelime başına 2,33 token** ölçüldü. Bu, chunk boyutunun modelin kendi tokenizer'ıyla ölçülmesi kararını (Karar 13) doğruluyor: kelime sayısıyla ölçülen "500 kelimelik" bir chunk yaklaşık 1165 token olurdu ve modelin 512 tokenlık sınırında sessizce kırpılırdı.
+- **Darboğaz CPU embedding'i:** 1,23 chunk/sn. 100 sayfalık bir belge yalnızca embedding için 4 dakikanın üzerinde sürer. GPU değerlendirmesi için ölçülmüş bir gerekçe.
+- **Kurulum:** BGE-M3'ün ilk indirmesi 178 sn sürdü. Windows'ta Hugging Face'in symlink uyarısı görüldü; zararsız olduğu değerlendirildi. Yalnızca bir uyarıyı susturmak için sistem güvenlik ayarı olan Developer Mode açılmadı.
+
+### Öğrenilenler
+- Bir korumanın testinin geçmesi, testin o korumayı gerçekten sınadığını göstermez. Korumayı bilerek bozup testin hatayı yakaladığını görmek (mutasyon testi) bunu kanıtlamanın ucuz bir yolu.
+- Harici bir kütüphanenin "makul görünen" davranışını varsaymak yerine denemek gerekir: ChromaDB'nin farklı metadata'yı sessizce yok sayması dokümantasyonda değil, denemede ortaya çıktı.
+- Ölçmeden optimize etmemek: GPU'ya geçme kararı, ölçülmüş bir darboğaza (1,23 chunk/sn) dayanıyor.
