@@ -1,104 +1,25 @@
-## Kurulum
+# Hızlı Kurulum (Windows / PowerShell)
 
-### Gereksinimler
-- Python 3.11
-- İnternet bağlantısı (yalnızca ilk kurulumda: Python paketleri ve modeller indirilir)
-- Yaklaşık birkaç GB boş disk alanı (torch ve modeller nedeniyle)
+**Gereksinimler:** Python 3.11, Ollama, yaklaşık 10 GB boş disk ve ilk kurulum için internet. Ayrıntılar ana [README.md](README.md) dosyasında.
 
-### Adımlar
-
-**Windows (PowerShell):**
 ```powershell
 python -m venv .venv
 .venv\Scripts\Activate.ps1
 pip install -r requirements-dev.txt
-python -m app.scripts.download_models
-pytest -v
-```
-
-**Linux / macOS:**
-```bash
-python3.11 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements-dev.txt
-python -m app.scripts.download_models
-pytest -v
-```
-
-`requirements.txt` yalnızca uygulamanın çalışması için gerekenleri, `requirements-dev.txt` ise ek olarak test araçlarını içerir.
-
-### Model indirme adımı
-`python -m app.scripts.download_models` belge işleme için gereken modelleri önceden indirir ve yüklenebildiklerini doğrular:
-
-| Model | Kaynak | İndiği yer |
-|---|---|---|
-| Docling layout ve tablo yapısı modelleri | Hugging Face | Hugging Face önbelleği (`~/.cache/huggingface/hub`) |
-| EasyOCR Türkçe/İngilizce modelleri | GitHub (EasyOCR sürüm dosyaları) | `~/.EasyOCR/model` |
-| BAAI/bge-m3 embedding modeli (~2.3 GB) | Hugging Face | Hugging Face önbelleği (`~/.cache/huggingface/hub`) |
-
-Bu adım atlanırsa modeller ilk belge işlenirken indirilir; sonuç aynıdır, ancak bir ağ sorunu o zaman ve daha zor anlaşılır biçimde ortaya çıkar. Modeller zaten indirilmişse betik yeniden indirmez, yalnızca yükleyip doğrular. Windows'ta `~`, `C:\Users\<kullanıcı>` anlamına gelir.
-
-## Uygulamayı çalıştırma
-
-Ollama çalışıyor ve model yüklü olmalı:
-
-```bash
 ollama pull qwen3:4b-instruct
+python -m app.scripts.download_models
 streamlit run streamlit_app.py
 ```
 
-Tarayıcıda açılan sayfada soldan PDF, JPG veya PNG yükleyip **Belgeleri işle**'ye basın. İşlenen belgeler listelenir; soru sormak istediğiniz belgeleri işaretleyip sohbet kutusuna sorunuzu yazın. Her cevabın altında, cevabın dayandığı dosya adı, sayfa ve metin gösterilir. Belgelerde cevap yoksa sistem bunu açıkça söyler.
+Ollama uygulaması açık olmalı. Uygulamada PDF/JPG/PNG yükleyin → **Belgeleri işle** → belge seçin → soru sorun. Kaynaklar her yanıtın altında gösterilir. Maksimum dosya boyutu 25 MB'dır.
 
-- İlk açılışta modeller yüklenir (1–2 dakika); sonraki etkileşimlerde yeniden yüklenmez.
-- Aynı içerikli dosya tekrar yüklenirse yeniden işlenmez; ilk yüklendiği adla gösterilir.
-- En fazla 25 MB'lık dosyalar kabul edilir. Yüklenen dosyalar `data/uploads/` altında saklanır.
-- Ollama farklı bir adreste çalışıyorsa: `RAG_OLLAMA_HOST`; farklı bir model için: `RAG_LLM_MODEL`.
+**Testler:**
 
-## Belgeleri indeksleme ve arama (komut satırı)
-
-```bash
-python -m app.scripts.search_documents rapor.pdf fatura.jpg -q "Glukoz değeri kaç?" -q "Son ödeme tarihi ne zaman?"
-python -m app.scripts.search_documents rapor.pdf          # etkileşimli: soruları tek tek yazın
-python -m app.scripts.inspect_document rapor.pdf          # yalnızca metin çıkarımını incele
+```powershell
+pytest -m "not integration" -q
+pytest -m integration -q
 ```
 
-Belgeler okunur, chunk'lara bölünür, BGE-M3 ile vektöre çevrilir ve ChromaDB'ye kaydedilir (varsayılan: `data/chroma`). Aynı dosya tekrar verildiğinde yeniden indekslenmez. Arama yalnızca komutta verilen belgeler içinde yapılır. Her sonuç için kosinüs **mesafesi** (küçük = daha alakalı) ve **benzerlik** (`1 - mesafe`) gösterilir.
+**Yaygın sorunlar:** Ollama'ya bağlanılamıyorsa servisi ve model indirmesini kontrol edin. İndeksin model/chunk ayarları değiştiyse `python -m app.scripts.search_documents --reset-index` komutu eski indeksi **siler**. İlk model indirmeleri birkaç dakika sürebilir; SSL doğrulamasını kapatmayın.
 
-İndeks, oluşturulduğu model ve chunk ayarlarını kaydeder. Bu ayarlar değişirse indeks kullanılmaz ve açık bir hata verilir; yeniden oluşturmak için:
-
-```bash
-python -m app.scripts.search_documents --reset-index
-```
-
-Ayarlar `app/core/config.py` içindedir. Makineye göre değişen ikisi ortam değişkeniyle verilebilir: `RAG_CHROMA_PATH` (veritabanı klasörü) ve `RAG_EMBEDDING_DEVICE` (`cpu` veya `cuda`).
-
-## Testler
-
-```bash
-pytest -m "not integration" -v   # Birim testleri: Docling yüklenmez, saniyeler içinde biter
-pytest -m integration -v         # Gerçek Docling + EasyOCR ile entegrasyon testleri
-pytest -v                        # Tümü
-```
-
-Test senaryoları, sonuçları ve bilinen sınırlamalar için bkz. [TESTING.md](TESTING.md).
-
-## Sorun giderme
-
-**Model indirme başarısız oluyor**
-1. Hata çıktısının tamamını kaydedin; neden genellikle son satırlarda yazar.
-2. İnternet bağlantısını ve `huggingface.co` ile `github.com` adreslerine erişimi kontrol edin.
-3. Betiği yeniden çalıştırın. Geçici ağ veya servis hataları tekrar denendiğinde çoğunlukla düzelir; yarım kalan indirmeler kaldığı yerden tamamlanır.
-4. Çok sayıda istekte Hugging Face hız sınırına takılıyorsanız ücretsiz bir Hugging Face hesabıyla bir erişim anahtarı oluşturup `HF_TOKEN` ortam değişkenine tanımlayabilirsiniz. Bu adım zorunlu değildir.
-5. Kurum ağlarında HTTPS trafiğini denetleyen bir proxy varsa sertifika doğrulama hatası (`CERTIFICATE_VERIFY_FAILED`) alınabilir. Bu durumda SSL doğrulamasını kapatmayın; kurumun kök sertifikasının Python tarafından güvenilir olarak tanınması gerekir (BT ekibinize danışın) veya kurulum denetimsiz bir ağda yapılabilir.
-
-**Windows'ta "symlinks" uyarısı**
-Hugging Face önbelleği Windows'ta sembolik bağlantı oluşturamadığında bu uyarıyı verir. Zararsızdır; yalnızca disk kullanımı biraz artar.
-
-**"Ollama'ya bağlanılamadı" / "model Ollama'da yüklü değil"**
-Ollama uygulamasının açık olduğundan emin olun (veya `ollama serve`). Model yüklü değilse: `ollama pull qwen3:4b-instruct`. Uygulama bu durumda çökmez; Ollama açıldıktan sonra soruyu tekrar sorabilirsiniz.
-
-**`IndexConfigMismatchError`**
-Mevcut indeks farklı bir model veya chunk ayarıyla oluşturulmuş. Yanlış sonuç vermemesi için kullanılmaz. Hata mesajı hangi ayarların farklı olduğunu yazar; `python -m app.scripts.search_documents --reset-index` ile indeksi silip belgeleri yeniden indeksleyin.
-
-**`no accelerator is found` uyarısı**
-Windows'ta PyPI'dan kurulan torch CPU sürümüdür; belge işleme CPU üzerinde çalışır. İşlevsel bir sorun değildir, yalnızca büyük belgelerde süre uzar.
+> Bu kurulum özeti ana README'deki talimatlarla tekrar ediyor. Repository'de tek kurulum kaynağı istiyorsanız bu ek dosyayı kaldırabilirsiniz.
