@@ -125,3 +125,40 @@ class IndexingResult:
     file_name: str
     status: IndexingStatus
     chunk_count: int
+
+
+# --- Soru-cevap modelleri ---------------------------------------------------
+
+
+class AnswerStatus(str, Enum):
+    ANSWERED = "answered"                          # cevap var ve geçerli kaynaklara dayanıyor
+    NO_RELEVANT_CONTEXT = "no_relevant_context"    # retrieval boş; LLM çağrılmadı
+    INSUFFICIENT_INFORMATION = "insufficient_information"  # LLM: belgelerde cevap yok
+    UNVERIFIED = "unverified"                      # LLM cevap verdi ama geçerli kaynak göstermedi; cevap gösterilmez
+
+
+@dataclass(frozen=True, slots=True)
+class SourceReference:
+    """Cevabın dayandığı kaynak. Alanların tamamı retrieval sonucundan gelir;
+    LLM'in yazdığı dosya/sayfa bilgisi hiçbir zaman kullanılmaz."""
+
+    source_id: str        # LLM'e gösterilen kimlik: S1, S2, ...
+    document_id: str
+    file_name: str
+    page_number: int
+    chunk_id: str
+    text: str
+    distance: float
+
+
+@dataclass(frozen=True, slots=True)
+class QuestionAnswer:
+    question: str
+    status: AnswerStatus
+    answer: str
+    sources: tuple[SourceReference, ...] = ()
+    rejected_source_ids: tuple[str, ...] = ()   # LLM'in verdiği ama izin verilmeyen kimlikler (tanı için)
+
+    @property
+    def is_answered(self) -> bool:
+        return self.status is AnswerStatus.ANSWERED

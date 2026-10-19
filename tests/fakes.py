@@ -91,3 +91,70 @@ def make_document(pages: list[str], document_id: str = "doc-a", file_name: str =
             for number, text in enumerate(pages, start=1)
         ),
     )
+
+
+# --- Arayüz testleri için sahte pipeline bileşenleri ---------------------------
+
+
+class FakeIngestion:
+    """Dosyayı okumadan, içerik özetiyle kimliklendirilmiş sahte bir belge döndürür."""
+
+    def __init__(self, pages=("Glukoz 98 mg/dL.",), error: Exception | None = None) -> None:
+        self.pages, self.error, self.calls = list(pages), error, []
+
+    def ingest(self, path):
+        from app.services.ingestion_service import IngestionService
+
+        self.calls.append(path)
+        if self.error:
+            raise self.error
+        return make_document(self.pages, IngestionService.compute_document_id(path), path.name)
+
+
+class FakeIndexing:
+    def __init__(self, error: Exception | None = None) -> None:
+        self.documents: dict[str, tuple[str, int]] = {}
+        self.error = error
+
+    def indexed_chunk_count(self, document_id):
+        return self.documents.get(document_id, ("", 0))[1]
+
+    def indexed_file_name(self, document_id):
+        return self.documents.get(document_id, (None, 0))[0]
+
+    def index_document(self, document, reindex=False):
+        from app.core.models import IndexingResult, IndexingStatus
+
+        if self.error:
+            raise self.error
+        count = sum(not page.is_empty for page in document.pages)
+        if not count:
+            return IndexingResult(document.document_id, document.file_name, IndexingStatus.EMPTY, 0)
+        self.documents[document.document_id] = (document.file_name, count)
+        return IndexingResult(document.document_id, document.file_name, IndexingStatus.INDEXED, count)
+
+
+class FakeQuestionAnswering:
+    def __init__(self, error: Exception | None = None) -> None:
+        self.error, self.calls = error, []
+
+    def answer(self, question, document_ids):
+        from app.core.models import AnswerStatus, QuestionAnswer, SourceReference
+
+        self.calls.append((question, list(document_ids)))
+        if self.error:
+            raise self.error
+        source = SourceReference("S1", document_ids[0], "rapor.pdf", 2, "c", "Glukoz 98 mg/dL.", 0.3)
+        return QuestionAnswer(question, AnswerStatus.ANSWERED, "Açlık glukozu 98 mg/dL.", (source,))
+
+
+def fake_pipeline(**overrides):
+    from types import SimpleNamespace
+
+    parts = {
+        "ingestion": FakeIngestion(),
+        "indexing": FakeIndexing(),
+        "question_answering": FakeQuestionAnswering(),
+    }
+    parts.update(overrides)
+    return SimpleNamespace(**parts)

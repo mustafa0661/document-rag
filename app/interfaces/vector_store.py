@@ -15,6 +15,14 @@ class VectorStore(ABC):
         """Belgeye ait kayıtlı chunk sayısı; belge indeksli değilse 0."""
 
     @abstractmethod
+    def document_file_name(self, document_id: str) -> str | None:
+        """Belgenin indekste kayıtlı dosya adı; belge indeksli değilse None.
+
+        Aynı içerik (aynı document_id) farklı adla yeniden yüklendiğinde
+        kaynak gösteriminin tutarlı kalması için ilk kayıttaki ad kullanılır.
+        """
+
+    @abstractmethod
     def delete_document(self, document_id: str) -> int:
         """Belgenin tüm chunk'larını siler ve silinen sayıyı döndürür."""
 

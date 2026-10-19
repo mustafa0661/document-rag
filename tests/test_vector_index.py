@@ -279,3 +279,17 @@ def test_failure_midway_rolls_back_partial_document(store):
 
     # İlk chunk yazılmıştı; geri alındı ki belge "indeksli" görünüp sonraki denemede atlanmasın.
     assert store.count_document_chunks("doc-tr") == 0
+
+
+def test_same_content_uploaded_with_new_name_reports_original_name(store, embedder):
+    indexing, _ = _services(store, embedder)
+    indexing.index_document(make_document(TURKISH_PAGES, document_id="doc-tr", file_name="ilk.pdf"))
+
+    result = indexing.index_document(make_document(TURKISH_PAGES, document_id="doc-tr", file_name="kopya.pdf"))
+
+    # Aynı içerik (aynı document_id): yeniden indekslenmez ve kaynaklarda görünecek
+    # ad (ilk.pdf) ile arayüzde gösterilecek ad aynı olur.
+    assert result.status is IndexingStatus.SKIPPED
+    assert result.file_name == "ilk.pdf"
+    assert store.document_file_name("doc-tr") == "ilk.pdf"
+    assert store.document_file_name("doc-yok") is None

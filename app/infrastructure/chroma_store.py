@@ -58,6 +58,10 @@ class ChromaVectorStore(VectorStore):
     def count_document_chunks(self, document_id: str) -> int:
         return len(self._collection.get(where={"document_id": document_id}, include=[])["ids"])
 
+    def document_file_name(self, document_id: str) -> str | None:
+        result = self._collection.get(where={"document_id": document_id}, limit=1, include=["metadatas"])
+        return str(result["metadatas"][0]["file_name"]) if result["ids"] else None
+
     def delete_document(self, document_id: str) -> int:
         ids = self._collection.get(where={"document_id": document_id}, include=[])["ids"]
         if ids:

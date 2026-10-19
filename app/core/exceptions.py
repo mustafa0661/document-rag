@@ -31,3 +31,11 @@ class EmbeddingDimensionError(Exception):
 
 class InvalidQueryError(ValueError):
     """Arama isteği geçersiz: boş sorgu, boş belge listesi veya geçersiz top_k."""
+
+
+class LlmUnavailableError(Exception):
+    """LLM servisine ulaşılamıyor (Ollama kapalı, model yüklü değil, zaman aşımı)."""
+
+
+class LlmResponseError(Exception):
+    """LLM beklenen yapıda bir cevap döndürmedi."""

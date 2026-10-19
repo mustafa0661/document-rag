@@ -38,7 +38,23 @@ pytest -v
 
 Bu adım atlanırsa modeller ilk belge işlenirken indirilir; sonuç aynıdır, ancak bir ağ sorunu o zaman ve daha zor anlaşılır biçimde ortaya çıkar. Modeller zaten indirilmişse betik yeniden indirmez, yalnızca yükleyip doğrular. Windows'ta `~`, `C:\Users\<kullanıcı>` anlamına gelir.
 
-## Belgeleri indeksleme ve arama
+## Uygulamayı çalıştırma
+
+Ollama çalışıyor ve model yüklü olmalı:
+
+```bash
+ollama pull qwen3:4b-instruct
+streamlit run streamlit_app.py
+```
+
+Tarayıcıda açılan sayfada soldan PDF, JPG veya PNG yükleyip **Belgeleri işle**'ye basın. İşlenen belgeler listelenir; soru sormak istediğiniz belgeleri işaretleyip sohbet kutusuna sorunuzu yazın. Her cevabın altında, cevabın dayandığı dosya adı, sayfa ve metin gösterilir. Belgelerde cevap yoksa sistem bunu açıkça söyler.
+
+- İlk açılışta modeller yüklenir (1–2 dakika); sonraki etkileşimlerde yeniden yüklenmez.
+- Aynı içerikli dosya tekrar yüklenirse yeniden işlenmez; ilk yüklendiği adla gösterilir.
+- En fazla 25 MB'lık dosyalar kabul edilir. Yüklenen dosyalar `data/uploads/` altında saklanır.
+- Ollama farklı bir adreste çalışıyorsa: `RAG_OLLAMA_HOST`; farklı bir model için: `RAG_LLM_MODEL`.
+
+## Belgeleri indeksleme ve arama (komut satırı)
 
 ```bash
 python -m app.scripts.search_documents rapor.pdf fatura.jpg -q "Glukoz değeri kaç?" -q "Son ödeme tarihi ne zaman?"
@@ -77,6 +93,9 @@ Test senaryoları, sonuçları ve bilinen sınırlamalar için bkz. [TESTING.md]
 
 **Windows'ta "symlinks" uyarısı**
 Hugging Face önbelleği Windows'ta sembolik bağlantı oluşturamadığında bu uyarıyı verir. Zararsızdır; yalnızca disk kullanımı biraz artar.
+
+**"Ollama'ya bağlanılamadı" / "model Ollama'da yüklü değil"**
+Ollama uygulamasının açık olduğundan emin olun (veya `ollama serve`). Model yüklü değilse: `ollama pull qwen3:4b-instruct`. Uygulama bu durumda çökmez; Ollama açıldıktan sonra soruyu tekrar sorabilirsiniz.
 
 **`IndexConfigMismatchError`**
 Mevcut indeks farklı bir model veya chunk ayarıyla oluşturulmuş. Yanlış sonuç vermemesi için kullanılmaz. Hata mesajı hangi ayarların farklı olduğunu yazar; `python -m app.scripts.search_documents --reset-index` ile indeksi silip belgeleri yeniden indeksleyin.

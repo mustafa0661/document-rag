@@ -33,7 +33,10 @@ class IndexingService:
         """
         existing = self._store.count_document_chunks(document.document_id)
         if existing and not reindex:
-            return self._result(document, IndexingStatus.SKIPPED, existing)
+            # Aynı içerik farklı adla gelmiş olabilir: indeksteki (ilk) adı döndür ki
+            # arayüzdeki belge adı ile kaynaklardaki ad aynı olsun.
+            stored_name = self._store.document_file_name(document.document_id) or document.file_name
+            return IndexingResult(document.document_id, stored_name, IndexingStatus.SKIPPED, existing)
         if existing:
             self._store.delete_document(document.document_id)
 
@@ -57,6 +60,10 @@ class IndexingService:
     def indexed_chunk_count(self, document_id: str) -> int:
         """Belgenin indeksteki chunk sayısı; 0 ise belge indeksli değildir."""
         return self._store.count_document_chunks(document_id)
+
+    def indexed_file_name(self, document_id: str) -> str | None:
+        """Belgenin indekste kayıtlı (ilk yüklendiği) dosya adı."""
+        return self._store.document_file_name(document_id)
 
     def remove_document(self, document_id: str) -> int:
         return self._store.delete_document(document_id)
