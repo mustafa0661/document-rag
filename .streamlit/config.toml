@@ -1,0 +1,6 @@
+[server]
+# Uygulama içindeki doğrulamayla aynı sınır (RagSettings.max_upload_mb).
+maxUploadSize = 25
+
+[browser]
+gatherUsageStats = false

@@ -2,11 +2,54 @@
 
 Bu doküman sistemin nasıl test edildiğini, sonuçlarını ve bilinen sınırlarını kayıt altına alır. Kapsam: **Document Ingestion**, **Chunking, Embedding ve Retrieval**, **Soru-Cevap (LLM)** ve **Streamlit arayüzü**.
 
+## Teslim anındaki durum (2026-10-19)
+
+### Bu doküman neyi kanıtlıyor, neyi kanıtlamıyor
+Testlerin geçmesi, **kodun tasarlandığı gibi davrandığını** gösterir: belge filtresi uygulanıyor, boş retrieval'da LLM çağrılmıyor, uydurma kaynaklar reddediliyor, yüklemeler güvenli kaydediliyor. **Gerçek dünyadaki başarıyı kanıtlamaz.** Retrieval ve OCR testlerinin çoğu kısa ve temiz sentetik metinlerle yapıldı. Gerçek belgeyle yapılan tek deneme (Parol KÜB, 19 soru), sentetik testlerin hiç göstermediği bir hata türünü ortaya çıkardı. Gerçek dünya performansı hakkındaki iddialar yalnızca o denemeye dayanıyor.
+
+### Test sonuçları
+
+| Ortam | Kapsam | Sonuç | Süre |
+|---|---|---|---|
+| Geliştirme (Linux, Python 3.12) | Birim, arayüz ve denetim testleri (son kod) | **166 geçti**, 12 atlandı (Docling, BGE-M3 ve Ollama gerektirenler) | 6,5 sn |
+| Windows (Python 3.11.9) | Birim ve arayüz testleri | 139 geçti (son değişikliklerden önceki sürüm) | 18,5 sn |
+| Windows | Docling entegrasyon | 9 / 9 | — |
+| Windows | BGE-M3 entegrasyon | 11 / 11 | — |
+| Windows | Ollama entegrasyon | Son raporlanan: 8 geçti, 1 başarısız, 1 xpassed. Ardından iki test, gerekçesiyle `xfail` olarak işaretlendi. Bu son hâl Windows'ta **henüz çalıştırılmadı**. | 15,4 sn |
+
+**Son kod Windows'ta henüz doğrulanmadı.** Teslimden önce şu komutlar çalıştırılıp tablo güncellenecek: `python -m app.scripts.release_check --run-tests` ve `pytest -m integration -q`. Beklenen sonuçlar: birim testlerinde 166 geçen; entegrasyonda 28 geçen ve 2 `xfail` (toplam 30).
+
+### Kapsam özeti
+
+| Alan | Kanıt | Durum |
+|---|---|---|
+| Türkçe/İngilizce metin çıkarımı | Sentetik PDF/PNG/JPG; gerçek dijital PDF (Parol KÜB) | ✅ |
+| Taranmış belge (OCR) | Sentetik, görüntüden oluşan PDF ve PNG | ✅ sentetik / ⚠️ gerçek tarama denenmedi |
+| Tablolu belge | Sentetik dijital ve taranmış tablo; gerçek belgede tablo hücresi okuma | ✅ |
+| Retrieval | Sentetik: 7 alakalı sorunun 7'sinde doğru sayfa ilk sırada; alakasız sorularla arada ~0,19 mesafe farkı | ✅ sentetik / ⚠️ gerçek belgede Hit@k ölçülmedi |
+| Belge dışı sorular | Sentetik testler ve Parol KÜB'de 7 belge dışı soru: hepsi reddedildi | ✅ |
+| İki belge arasında filtre | Birim, arayüz ve Ollama testleri | ✅ |
+| Kaynağa sadık aktarım | Parol KÜB'de 19 sorudan 4'ünde sorun | ❌ bilinen sınırlama |
+| Uçtan uca arayüz (gerçek modellerle) | Parol KÜB yüklendi, işlendi (10 sayfa, 54 chunk), 19 soru soruldu | ✅ tek belge / ⚠️ iki belgeyle filtre arayüzde denenmedi |
+
+### OCR sınırlamaları
+- Testler yalnızca beyaz zemin üzerinde net fontlu sentetik görsellerle yapıldı. Telefon fotoğrafı, eğik sayfa, gölge, düşük çözünürlük ve el yazısı **ölçülmedi**.
+- Tam sayfa OCR modunda (`force_full_page_ocr=True`) kelime sırasının bozulduğu gözlendi; bu yüzden varsayılan mod kullanılıyor.
+- Docling, sayfa sonunda devam eden paragrafı önceki sayfaya yazabiliyor ve sayfa başındaki bir liste maddesini başlık sanabiliyor ("-İştahsızlık" örneği).
+- CPU'da çalışılıyor; taranmış sayfalar dijital sayfalardan belirgin şekilde yavaş işleniyor.
+
+### Bilinen hatalar (açık)
+1. **Kaynağın yanlış aktarılması:** "Dikkatli kullanılmalıdır" ifadesi "kullanılmamalıdır" diye aktarılabiliyor, "tıbbi tavsiye olmadıkça" gibi şartlar düşebiliyor, listeler eksik kalabiliyor. Prompt kurallarıyla kısmen düzeldi; etkileşim testi `xfail`.
+2. **Türkçe soru ile İngilizce belge:** Cevap reddedilebiliyor veya göreli ifadeler yanlış çevrilebiliyor; test `xfail`.
+3. **Soru yanlış anlaşılabiliyor:** "son kullanım tarihi" sorusu "son yenileme tarihi" olarak anlaşıldı.
+4. **Kontrendikasyonlar (4.3) bölümü** "kimler kullanmamalı" sorusunda getirilmedi; neden incelenmedi.
+5. **Windows'ta aralıklı `access violation` mesajı** (tablo testi, faulthandler): test geçiyor, çıktı doğru; üçüncü parti yerel kodda.
+
 ## Testleri çalıştırma
 
 ```bash
 pip install -r requirements-dev.txt
-python -m app.scripts.download_models   # Modelleri önceden indirir (ilk kurulumda bir kez)
+python -m app.scripts.download_models   # Docling, EasyOCR ve BGE-M3 modellerini önceden indirir (ilk kurulumda bir kez)
 
 pytest -m "not integration" -v          # Birim testleri: model yüklenmez
 pytest -m integration -v -s             # Entegrasyon: gerçek Docling, EasyOCR ve BGE-M3; -s ölçümleri gösterir

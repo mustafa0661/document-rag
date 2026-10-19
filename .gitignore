@@ -1,14 +1,28 @@
-.venv/
+# Python
 __pycache__/
 *.py[cod]
 .pytest_cache/
+.venv/
+venv/
+
+# Ortam değişkenleri (gizli bilgi içerebilir); örnek dosya hariç
 .env
-.streamlit/secrets.toml
+.env.*
+!.env.example
+
+# Uygulama verisi: ChromaDB indeksleri, yüklenen dosyalar, denetim raporu
 data/
-chroma_db/
-*.log
+
+# Geçici inceleme ve hata ayıklama çıktıları
 inspect_out/
-data/
-data/chroma/
-data/eval_chroma/
-data/uploads/
+debug_out/
+debug_*.py
+
+# Değerlendirme belgeleri: yeniden dağıtım izni netse bu satırı kaldırın
+eval/documents/
+
+# IDE / işletim sistemi
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

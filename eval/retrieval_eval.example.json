@@ -1,0 +1,60 @@
+{
+  "documents": [
+    "eval/documents/kullanma_talimati.pdf",
+    "eval/documents/who_fact_sheet.pdf",
+    "eval/documents/basili_sayfa_foto.jpg",
+    "eval/documents/tablolu_rapor.pdf"
+  ],
+  "questions": [
+    {
+      "id": "tr-01",
+      "question": "Bu ilaçtan bir günde en fazla kaç tablet alınabilir?",
+      "type": "relevant",
+      "language": "tr",
+      "expected": [{"file": "kullanma_talimati.pdf", "pages": [2]}]
+    },
+    {
+      "id": "tr-02",
+      "question": "Hamilelikte kullanımı güvenli mi?",
+      "type": "relevant",
+      "language": "tr",
+      "expected": [{"file": "kullanma_talimati.pdf", "pages": [2, 3]}],
+      "note": "Cevap iki sayfaya yayılıyor; ikisi de doğru sayılır."
+    },
+    {
+      "id": "en-01",
+      "question": "How many adults are estimated to have hypertension worldwide?",
+      "type": "relevant",
+      "language": "en",
+      "expected": [{"file": "who_fact_sheet.pdf", "pages": [1]}]
+    },
+    {
+      "id": "cr-01",
+      "question": "Yüksek tansiyonun risk faktörleri nelerdir?",
+      "type": "relevant",
+      "language": "cross",
+      "expected": [{"file": "who_fact_sheet.pdf", "pages": [2]}],
+      "note": "Türkçe soru, İngilizce belge."
+    },
+    {
+      "id": "tb-01",
+      "question": "Tablodaki ikinci satırın sonuç değeri nedir?",
+      "type": "relevant",
+      "language": "tr",
+      "expected": [{"file": "tablolu_rapor.pdf", "pages": [1]}]
+    },
+    {
+      "id": "nm-01",
+      "question": "Bu ilaç çocuklarda ateş düşürücü olarak hangi dozda kullanılır?",
+      "type": "near_miss",
+      "language": "tr",
+      "note": "Konu aynı (ilaç), ama belgede çocuk dozu yok. Kendi belgenize göre uyarlayın."
+    },
+    {
+      "id": "os-01",
+      "question": "Ankara'dan İstanbul'a hızlı tren kaç saat sürer?",
+      "type": "out_of_scope",
+      "language": "tr"
+    }
+  ]
+}

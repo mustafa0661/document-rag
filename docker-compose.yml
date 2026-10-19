@@ -1,0 +1,26 @@
+# DENEYSEL — doğrulanmadı (bkz. Dockerfile başındaki not).
+# Ollama konteynerde DEĞİL, ana makinede (Windows) çalışır; konteyner ona
+# host.docker.internal üzerinden bağlanır.
+#
+#   docker compose build
+#   docker compose run --rm app python -m app.scripts.download_models   # modeller (tek sefer)
+#   docker compose up                                                    # http://localhost:8501
+
+services:
+  app:
+    build: .
+    ports:
+      - "8501:8501"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      RAG_OLLAMA_HOST: ${RAG_OLLAMA_HOST_DOCKER:-http://host.docker.internal:11434}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # Linux için; Docker Desktop'ta zaten tanımlı
+    volumes:
+      - ./data:/app/data      # ChromaDB indeksi ve yüklenen dosyalar kalıcı
+      - models:/models        # Hugging Face ve EasyOCR modelleri (~3 GB) kalıcı
+
+volumes:
+  models:

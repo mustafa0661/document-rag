@@ -362,3 +362,81 @@ Belge kimliği içeriğin özeti olduğu için aynı dosya farklı adla yüklend
 - Belge işleme kilidi, aynı anda birden fazla kullanıcının yükleme yapması durumunda işlemleri sıraya sokar. Yerel bir MVP için kabul edilebilir.
 - Embedding CPU'da yavaş (1,23 chunk/sn); GPU ölçümü yapılmadı.
 - `app/main.py`'deki ilk Ollama denemesi artık kullanılmıyor.
+
+
+---
+
+## Day 5 — 2026-10-19 (Teslimat hazırlığı)
+
+### Hedef
+Yeni özellik eklemeden, mevcut projeyi teslime hazır hâle getirmek: denetim, temizlik, kurulum belgeleri ve dürüst bir test raporu.
+
+### Kronolojik akış
+
+**1. Denetimin sınırı baştan belirlendi.** Geliştirme ortamında kullanıcının repository'si yoktu. Elde yalnızca teslim edilen dosyalardan oluşan bir kopya vardı; ayrıca torch, model dosyaları, Ollama ve Docker da yoktu. Bu yüzden git durumu, commit edilmiş dosyalar ve uçtan uca akış burada doğrulanamazdı. Bunları "başarılı" diye işaretlemek yerine, kullanıcının kendi repository'sinde çalıştıracağı bir denetim betiği yazıldı.
+
+**2. Statik analiz (pyflakes).** İki küçük sorun bulundu ve düzeltildi: yer tutucusu olmayan bir f-string ve `search_documents.py` dosyasını ortak `bootstrap` modülüne geçirirken kalmış kullanılmayan bir import.
+
+**3. Teslimat denetim betiği** (`app/scripts/release_check.py`). Git'te takip edilen her dosyayı kurallara göre tarıyor: sanal ortam, `.env`, ChromaDB verisi, model dosyaları, kullanıcı belgeleri, geçici dosyalar, büyük dosyalar ve gizli anahtar kalıpları. Ayrıca `.gitignore` eksiklerini, requirements sürüm uyumunu ve `pip check` sonucunu raporluyor. Kural mantığı saf fonksiyonlar olarak yazıldı ve 27 testle doğrulandı. Betiğin kendisi de, içine kasıtlı tuzaklar (`.env`, token, ChromaDB dosyası, hata ayıklama betiği) yerleştirilmiş geçici bir git deposunda çalıştırıldı; tuzakların hepsini yakaladı.
+
+**4. Başarısız deneme: yanlış alarm.** Denetim betiği ilk çalıştırmada kendi test dosyasındaki örnek parola satırını gerçek bir gizli bilgi olarak raporladı. Kullanıcının repository'sinde de bu satır "KRİTİK" olarak görünecekti. Test verisi, kalıp kaynak kodda birebir yazılı olmayacak ama çalışma anında yine oluşacak şekilde parçalanarak yeniden yazıldı. Ders: tarama araçlarının kendi testleri de taranan kodun parçası.
+
+**5. Kurulum dosyaları.** Önerilen `.gitignore` (`data/`, `.env`, geçici çıktılar, değerlendirme belgeleri), `.env.example` ve sıfırdan kurulum için baştan yazılmış bir README eklendi. README'de açıkça belirtilen bir nokta: uygulama `.env` dosyasını otomatik okumuyor; ayarlar ortam değişkenlerinden okunuyor ve `.env` yalnızca Docker Compose tarafından kullanılıyor.
+
+**6. Docker: yazıldı ama doğrulanmadı.** Day 1'de planlanan Docker Compose için bir `Dockerfile`, `docker-compose.yml` ve `.dockerignore` hazırlandı. Kararlar şunlar:
+- CPU sürümü torch ve torchvision PyTorch'un kendi indeksinden kuruluyor; PyPI'daki Linux paketleri ~5 GB CUDA kütüphanesi çekiyor.
+- Ollama konteynere alınmadı, ana makinede çalışıyor; konteyner ona `host.docker.internal` üzerinden bağlanıyor.
+- `data/` klasörü ve model önbellekleri volume olarak bağlanıyor, böylece kalıcı.
+- Model indirme ayrı, tek seferlik bir komut olarak yapılıyor.
+
+Geliştirme ortamında Docker olmadığı için yalnızca YAML sözdizimi doğrulandı. Bu dosyalar, başlarındaki notla ve README'de **"deneysel, doğrulanmadı"** olarak işaretlendi. Resmî yöntem yerel Windows kurulumu olarak bırakıldı. Bilinen bir risk: Ollama varsayılan olarak yalnızca `127.0.0.1` üzerinden dinlediği için konteynerin ona bağlanması `OLLAMA_HOST=0.0.0.0` ayarını gerektirebilir.
+
+### Sonuçlar
+- Geliştirme ortamı (Linux, Python 3.12): **166 test geçti, 12 test atlandı** (Docling, BGE-M3 ve Ollama gerektirenler). Statik analiz temiz.
+- Kullanıcı ortamında (Windows) son değişikliklerden sonra çalıştırılacaklar: denetim betiği, birim testleri, 30 entegrasyon testi ve arayüzde uçtan uca kontrol listesi.
+
+### Doğrulanamayan veya yapılmayan işler
+- Kontrendikasyonlar (4.3) bölümünün retrieval'da neden getirilmediği incelenmedi.
+- İfade gücü kurallarından sonra Parol KÜB soruları arayüzde yeniden sorulmadı.
+- Gerçek belgelerle `evaluate_retrieval` çalıştırılmadı; benzerlik eşiği belirlenmedi.
+- Taranmış (telefon fotoğrafı) gerçek bir belge denenmedi.
+- Docker imajı derlenmedi.
+
+---
+
+## Zaman dağılımı
+
+_Gerçek süreler bilinmediği için doldurulmadı; uydurma rakam yazılmadı._
+
+| Gün | Konu | Süre |
+|---|---|---|
+| Day 1 | Ortam, Ollama, mimari planı | _doldurulacak_ |
+| Day 2 | Ingestion (Docling, OCR, testler, taranmış PDF teşhisi) | _doldurulacak_ |
+| Day 3 | Chunking, embedding, ChromaDB, retrieval | _doldurulacak_ |
+| Day 4 | Soru-cevap (Ollama), Streamlit, gerçek belge denemesi | _doldurulacak_ |
+| Day 5 | Teslimat hazırlığı | _doldurulacak_ |
+
+## Projenin genel değerlendirmesi
+
+### İşe yarayan yaklaşımlar
+- **Önce plan, sonra kod.** Her aşamada mimari ve karar noktaları kod yazılmadan konuşuldu; dış kütüphanelerin davranışı varsayılmadı, kaynak koddan veya denenerek doğrulandı. Bunun en net örnekleri ChromaDB'nin farklı metadata'yı sessizce yok sayması ve Ollama kütüphanesinin zaman aşımı hatalarını yakalamaması.
+- **Ölçerek teşhis.** Taranmış PDF sorunu, tahmine dayalı üç denemeden sonra tek bir kontrollü deneyle çözüldü.
+- **Mutasyon testi.** Testlerin gerçekten bir şey ölçtüğü, korumalar tek tek bozularak doğrulandı.
+- **Katmanlı halüsinasyon koruması.** Belgede olmayan ve konu dışı soruların hiçbirinde uydurma bir cevap üretilmedi.
+
+### Baştan başlasaydım
+1. **Gerçek belgelerle değerlendirmeyi en başta kurardım.** Projenin en önemli bulgusu (modelin ifade gücünü değiştirmesi) sentetik testlerde hiç görünmedi; gerçek bir belgede ortaya çıktı. Küçük bir gerçek soru seti ilk günden olsaydı bu hata türü erken fark edilirdi.
+2. **Kurulumu ilk gün boş bir ortamda denerdim.** `requirements.txt`'deki yanlış ekstra adı (EasyOCR'ın hiç kurulmaması) üç gün boyunca fark edilmedi, çünkü geliştirme ortamında paket zaten kuruluydu. Docker veya temiz bir sanal ortamla erken bir kurulum denemesi bunu ilk gün yakalardı.
+3. **Testleri iki işletim sisteminde çalıştırırdım.** Windows'un ortam değişkeni sınırı ve `faulthandler` mesajları Linux'ta görünmedi.
+4. **Cevaplarda alıntı tabanlı doğrulamayı baştan tasarlardım.** Modelden her iddia için kaynaktan birebir alıntı istemek ve alıntıyı kodla doğrulamak, gözlenen hatayı doğrudan hedeflerdi.
+5. **Test fixture'larını gerçekçi metinlerle yazardım.** Noktalamasız sentetik metinler Docling'in sayfa birleştirme davranışını tetikledi ve teşhisi uzattı.
+
+## Bilinen sınırlamalar (özet)
+- Model kaynağı aktarırken ifadelerin kesinlik derecesini değiştirebiliyor; kaynak kimliği doğrulaması bunu yakalamıyor.
+- Türkçe soru ile İngilizce belge arasında cevap eşleştirmesi zayıf.
+- Bağlam takibi yok; her soru bağımsız cevaplanıyor.
+- Benzerlik eşiği yok; gerçek belgelerle retrieval ölçümü yapılmadı.
+- Embedding CPU'da yavaş (~1,2 chunk/sn).
+- OCR yalnızca temiz sentetik görsellerle test edildi.
+- Docling'in sayfa sonu birleştirmesi, devam eden paragrafları önceki sayfaya yazabiliyor; liste maddelerini başlık sanabiliyor.
+- Docker kurulumu doğrulanmadı.
