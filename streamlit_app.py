@@ -63,10 +63,6 @@ def _render_message(message: dict) -> None:
         else:
             st.markdown(message["content"])
         if message.get("sources"):
-            st.caption(
-                "Bu cevap belgelerden otomatik olarak üretildi. Özellikle doz, uyarı ve yasak "
-                "bilgilerini aşağıdaki kaynak metinden doğrulayın."
-            )
             _render_sources(message["sources"])
 
 
